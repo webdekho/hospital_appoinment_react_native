@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import ApiService from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -31,6 +32,20 @@ export default function WelcomeScreen() {
   const scaleAnim2 = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
+    // Check if user is already authenticated
+    const checkAuth = async () => {
+      const token = await ApiService.getToken();
+      const userData = await ApiService.getUserData();
+      
+      if (token && userData) {
+        console.log('User already authenticated, redirecting to home');
+        router.replace('/(tabs)');
+        return;
+      }
+    };
+    
+    checkAuth();
+
     // Animation setup
     const createFloatingAnimation = (animValue, duration, delay = 0) => {
       return Animated.loop(

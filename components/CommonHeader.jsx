@@ -1,13 +1,35 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import ApiService from '../services/api';
 
 export default function CommonHeader({ title = 'Home', showSearch = true, showNotification = false, showLogout = true }) {
-  const handleLogout = () => {
-    // Navigate back to login screen
-    router.replace('/auth/login');
+  const [userData, setUserData] = useState(null);
+
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const user = await ApiService.getUserData();
+        console.log('Loaded user data for header:', user);
+        setUserData(user);
+      } catch (error) {
+        console.error('Error loading user data for header:', error);
+      }
+    };
+
+    loadUserData();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await ApiService.clearAuthData();
+      router.replace('/auth/login');
+    } catch (error) {
+      console.error('Error during logout:', error);
+      router.replace('/auth/login');
+    }
   };
   return (
     <LinearGradient
@@ -22,7 +44,9 @@ export default function CommonHeader({ title = 'Home', showSearch = true, showNo
         </View>
         <View>
           <Text style={styles.welcomeText}>Welcome Back</Text>
-          <Text style={styles.userName}>Mr. Williamson</Text>
+          <Text style={styles.userName}>
+            {userData?.full_name || 'User'}
+          </Text>
         </View>
       </View>
       <View style={styles.headerIcons}>

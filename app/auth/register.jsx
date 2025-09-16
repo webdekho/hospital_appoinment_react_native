@@ -10,17 +10,24 @@ import {
   Pressable,
   Dimensions,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import ApiService from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 
 export default function RegisterScreen() {
+  const params = useLocalSearchParams();
+  const { mobile } = params;
+  
   const [fullName, setFullName] = useState('');
   const [isValidName, setIsValidName] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Animation values
   const floatAnim1 = useState(new Animated.Value(0))[0];
@@ -107,20 +114,62 @@ export default function RegisterScreen() {
     setIsValidName(true);
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
+    setErrorMessage('');
+    
     if (!fullName.trim()) {
-      Alert.alert('Error', 'Please enter your full name');
+      setErrorMessage('Please enter your full name');
       return;
     }
 
     if (!validateName(fullName)) {
       setIsValidName(false);
-      Alert.alert('Error', 'Please enter a valid full name (letters only, minimum 2 characters)');
+      setErrorMessage('Please enter a valid full name (letters only, minimum 2 characters)');
       return;
     }
 
-    console.log('Registration data:', { fullName: fullName.trim() });
-    router.push('/auth/otp');
+    setIsLoading(true);
+
+    try {
+      const response = await ApiService.register(fullName.trim(), mobile, '123456');
+      
+      console.log('=== REGISTER API RESPONSE ===');
+      console.log('Full Response:', JSON.stringify(response, null, 2));
+      console.log('Response success:', response.success);
+      console.log('Response data status:', response.data?.status);
+      console.log('=== END REGISTER DEBUG ===');
+      
+      if (response.success && response.data.status) {
+        console.log('Registration successful, navigating to OTP screen');
+        setIsLoading(false);
+        
+        // Direct navigation to OTP screen with test OTP
+        setTimeout(() => {
+          router.replace({
+            pathname: '/auth/otp',
+            params: { 
+              mobile,
+              type: 'register',
+              fullName: fullName.trim(),
+              testOtp: response.data.data.otp // Pass OTP for testing
+            }
+          });
+        }, 100);
+        return;
+      } else {
+        const apiErrorMessage = response.data.message || 'Registration failed. Please try again.';
+        if (response.data.errors?.mobile_number) {
+          setErrorMessage('This mobile number is already registered. Please try logging in instead.');
+        } else {
+          setErrorMessage(apiErrorMessage);
+        }
+      }
+    } catch (error) {
+      console.log('Registration network error:', error);
+      setErrorMessage('Network error. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -176,7 +225,7 @@ export default function RegisterScreen() {
               <View style={styles.titleSection}>
                 <Text style={styles.welcomeTitle}>Sign Up</Text>
                 <Text style={styles.welcomeSubtitle}>
-                  Enter your full name to complete your profile
+                  Enter your full name for {mobile}
                 </Text>
               </View>
 
@@ -204,14 +253,21 @@ export default function RegisterScreen() {
                     Please enter a valid full name (letters only, minimum 2 characters)
                   </Text>
                 )}
+                {errorMessage && (
+                  <Text style={styles.errorText}>
+                    {errorMessage}
+                  </Text>
+                )}
               </View>
 
               <Pressable
                 style={({ pressed }) => [
                   styles.registerButton,
-                  pressed && styles.registerButtonPressed
+                  pressed && styles.registerButtonPressed,
+                  isLoading && styles.registerButtonDisabled
                 ]}
                 onPress={handleRegister}
+                disabled={isLoading}
                 android_ripple={{ 
                   color: '#ffffff40',
                   borderless: false
@@ -223,7 +279,11 @@ export default function RegisterScreen() {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
-                  <Text style={styles.registerButtonText}>Submit</Text>
+                  {isLoading ? (
+                    <ActivityIndicator color="#ffffff" size="small" />
+                  ) : (
+                    <Text style={styles.registerButtonText}>Submit</Text>
+                  )}
                 </LinearGradient>
               </Pressable>
 
@@ -402,6 +462,9 @@ const styles = StyleSheet.create({
   registerButtonPressed: {
     transform: [{ scale: 0.98 }],
     elevation: 2,
+  },
+  registerButtonDisabled: {
+    opacity: 0.7,
   },
   buttonGradient: {
     paddingVertical: 18,

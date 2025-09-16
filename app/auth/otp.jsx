@@ -9,18 +9,27 @@ import {
   Image,
   Pressable,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import Clipboard from '@react-native-clipboard/clipboard';
+import ApiService from '../../services/api';
 
 
 export default function OTPScreen() {
+  const params = useLocalSearchParams();
+  const { mobile, type, fullName, testOtp } = params;
+  
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [timer, setTimer] = useState(60);
   const [canResend, setCanResend] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [autoFillCountdown, setAutoFillCountdown] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
   const otpInputs = useRef([]);
 
   // Animation values
@@ -112,6 +121,42 @@ export default function OTPScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  // Auto-fill OTP for testing after 10 seconds
+  useEffect(() => {
+    if (testOtp && testOtp.length === 6) {
+      console.log('Test OTP received:', testOtp);
+      setAutoFillCountdown(10);
+      
+      // Countdown timer
+      const countdownInterval = setInterval(() => {
+        setAutoFillCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      const autoFillTimer = setTimeout(() => {
+        console.log('Auto-filling OTP for testing...');
+        const otpDigits = testOtp.split('');
+        setOtp(otpDigits);
+        setAutoFillCountdown(null);
+        
+        // Focus the last input
+        setTimeout(() => {
+          otpInputs.current[5]?.focus();
+        }, 100);
+      }, 10000); // 10 seconds
+
+      return () => {
+        clearTimeout(autoFillTimer);
+        clearInterval(countdownInterval);
+      };
+    }
+  }, [testOtp]);
+
   const handleOtpChange = (value, index) => {
     // Check if it's a paste operation (multiple digits)
     if (value.length > 1 && /^\d+$/.test(value)) {
@@ -156,23 +201,102 @@ export default function OTPScreen() {
     }
   };
 
-  const handleVerifyOtp = () => {
+  const handleVerifyOtp = async () => {
+    setErrorMessage('');
     const otpString = otp.join('');
     if (otpString.length !== 6) {
-      Alert.alert('Error', 'Please enter complete OTP');
+      setErrorMessage('Please enter complete OTP');
       return;
     }
 
-    console.log('OTP entered:', otpString);
-    router.push('/(tabs)');
+    setIsLoading(true);
+
+    try {
+      if (type === 'login') {
+        const response = await ApiService.verifyOtp(fullName || '', mobile, otpString);
+        
+        console.log('=== LOGIN OTP VERIFY RESPONSE ===');
+        console.log('Full Response:', JSON.stringify(response, null, 2));
+        console.log('Response success:', response.success);
+        console.log('Response data status:', response.data?.status);
+        console.log('Response data code:', response.data?.code);
+        console.log('=== END LOGIN OTP DEBUG ===');
+        
+        if (response.success && response.data.status) {
+          await ApiService.saveToken(response.data.data.token);
+          await ApiService.saveUserData(response.data.data.user);
+          
+          console.log('Login successful, navigating to tabs');
+          router.replace('/(tabs)');
+        } else {
+          if (response.data.code === 404) {
+            setErrorMessage('No account found with this mobile number. Redirecting to registration...');
+            setTimeout(() => {
+              router.push({
+                pathname: '/auth/register',
+                params: { mobile }
+              });
+            }, 2000);
+          } else if (response.data.code === 403) {
+            setErrorMessage(response.data.message || 'Account is deactivated. Please contact administrator.');
+          } else {
+            const apiErrorMessage = response.data.message || 'Invalid OTP. Please try again.';
+            setErrorMessage(apiErrorMessage);
+          }
+        }
+      } else if (type === 'register') {
+        const response = await ApiService.verifyRegistration(otpString, fullName, mobile, '123456');
+        
+        console.log('=== REGISTER OTP VERIFY RESPONSE ===');
+        console.log('Full Response:', JSON.stringify(response, null, 2));
+        console.log('Response success:', response.success);
+        console.log('Response data status:', response.data?.status);
+        console.log('Response data code:', response.data?.code);
+        console.log('=== END REGISTER OTP DEBUG ===');
+        
+        if (response.success && response.data.status) {
+          await ApiService.saveToken(response.data.data.token);
+          await ApiService.saveUserData(response.data.data.user);
+          
+          console.log('Registration successful, navigating to tabs');
+          router.replace('/(tabs)');
+        } else {
+          if (response.data.code === 403) {
+            setErrorMessage(response.data.message || 'Account is deactivated. Please contact administrator.');
+          } else {
+            const apiErrorMessage = response.data.message || 'Invalid or expired OTP. Please try again.';
+            setErrorMessage(apiErrorMessage);
+          }
+        }
+      }
+    } catch (error) {
+      console.log('OTP verification network error:', error);
+      setErrorMessage('Network error. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleResendOtp = () => {
-    if (canResend) {
-      setTimer(60);
-      setCanResend(false);
-      setOtp(['', '', '', '', '', '']);
-      Alert.alert('OTP Sent', 'A new OTP has been sent to your mobile number');
+  const handleResendOtp = async () => {
+    if (canResend && !isResending) {
+      setIsResending(true);
+      
+      try {
+        const response = await ApiService.loginOtp(mobile);
+        
+        if (response.success && response.data.status) {
+          setTimer(60);
+          setCanResend(false);
+          setOtp(['', '', '', '', '', '']);
+          setErrorMessage(''); // Clear any previous errors
+        } else {
+          setErrorMessage('Failed to resend OTP. Please try again.');
+        }
+      } catch (error) {
+        setErrorMessage('Network error. Please check your connection and try again.');
+      } finally {
+        setIsResending(false);
+      }
     }
   };
 
@@ -195,10 +319,10 @@ export default function OTPScreen() {
           otpInputs.current[focusIndex]?.focus();
         }, 50);
       } else {
-        Alert.alert('No OTP Found', 'No valid OTP code found in clipboard');
+        setErrorMessage('No valid OTP code found in clipboard');
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to paste OTP from clipboard');
+      setErrorMessage('Failed to paste OTP from clipboard');
     }
   };
 
@@ -255,8 +379,9 @@ export default function OTPScreen() {
               <View style={styles.titleSection}>
                 <Text style={styles.welcomeTitle}>Verify OTP</Text>
                 <Text style={styles.welcomeSubtitle}>
-                  Enter the 6-digit code sent to your mobile number
+                  Enter the 6-digit code sent to {mobile}
                 </Text>
+                
               </View>
 
               <View style={styles.otpSection}>
@@ -279,12 +404,21 @@ export default function OTPScreen() {
                     />
                   ))}
                 </View>
+                {errorMessage && (
+                  <Text style={styles.errorText}>
+                    {errorMessage}
+                  </Text>
+                )}
               </View>
 
               <View style={styles.timerSection}>
                 {canResend ? (
-                  <Pressable onPress={handleResendOtp}>
-                    <Text style={styles.resendText}>Resend OTP</Text>
+                  <Pressable onPress={handleResendOtp} disabled={isResending}>
+                    {isResending ? (
+                      <ActivityIndicator color="#005666" size="small" />
+                    ) : (
+                      <Text style={styles.resendText}>Resend OTP</Text>
+                    )}
                   </Pressable>
                 ) : (
                   <Text style={styles.timerText}>
@@ -296,9 +430,11 @@ export default function OTPScreen() {
               <Pressable
                 style={({ pressed }) => [
                   styles.verifyButton,
-                  pressed && styles.verifyButtonPressed
+                  pressed && styles.verifyButtonPressed,
+                  isLoading && styles.verifyButtonDisabled
                 ]}
                 onPress={handleVerifyOtp}
+                disabled={isLoading}
                 android_ripple={{ 
                   color: '#ffffff40',
                   borderless: false
@@ -310,7 +446,11 @@ export default function OTPScreen() {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
-                  <Text style={styles.verifyButtonText}>Verify OTP</Text>
+                  {isLoading ? (
+                    <ActivityIndicator color="#ffffff" size="small" />
+                  ) : (
+                    <Text style={styles.verifyButtonText}>Verify OTP</Text>
+                  )}
                 </LinearGradient>
               </Pressable>
 
@@ -478,6 +618,9 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
     elevation: 2,
   },
+  verifyButtonDisabled: {
+    opacity: 0.7,
+  },
   buttonGradient: {
     paddingVertical: 18,
     alignItems: 'center',
@@ -501,6 +644,25 @@ const styles = StyleSheet.create({
   linkText: {
     color: '#005666',
     fontWeight: '600',
+  },
+  autoFillText: {
+    fontSize: 14,
+    color: '#ff6b35',
+    textAlign: 'center',
+    marginTop: 8,
+    fontWeight: '600',
+    backgroundColor: '#fff3f0',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'center',
+  },
+  errorText: {
+    color: '#ff4757',
+    fontSize: 14,
+    marginTop: 12,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   // Decorative Shapes (same as login screen)
   decorativeShape1: { position: 'absolute', top: 80, right: 30, width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(0, 86, 102, 0.25)', zIndex: 0 },

@@ -10,17 +10,21 @@ import {
   Pressable,
   Dimensions,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import ApiService from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const [mobileNumber, setMobileNumber] = useState('');
   const [isValidNumber, setIsValidNumber] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Animation values
   const floatAnim1 = useState(new Animated.Value(0))[0];
@@ -36,6 +40,20 @@ export default function LoginScreen() {
   const scaleAnim2 = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
+    // Check if user is already authenticated
+    const checkAuth = async () => {
+      const token = await ApiService.getToken();
+      const userData = await ApiService.getUserData();
+      
+      if (token && userData) {
+        console.log('User already authenticated, redirecting to home');
+        router.replace('/(tabs)');
+        return;
+      }
+    };
+    
+    checkAuth();
+
     // Animation setup
     const createFloatingAnimation = (animValue, duration, delay = 0) => {
       return Animated.loop(
@@ -109,20 +127,82 @@ export default function LoginScreen() {
     setIsValidNumber(true);
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+    setErrorMessage('');
+    
     if (!mobileNumber) {
-      Alert.alert('Error', 'Please enter your mobile number');
+      setErrorMessage('Please enter your mobile number');
       return;
     }
 
     if (!validateMobileNumber(mobileNumber)) {
       setIsValidNumber(false);
-      Alert.alert('Error', 'Please enter a valid 10-digit mobile number');
+      setErrorMessage('Please enter a valid 10-digit mobile number');
       return;
     }
 
-    console.log('Mobile number entered:', mobileNumber);
-    router.push('/auth/register');
+    setIsLoading(true);
+
+    try {
+      const response = await ApiService.loginOtp(mobileNumber);
+      
+      console.log('=== API RESPONSE DEBUG ===');
+      console.log('Full API Response:', JSON.stringify(response, null, 2));
+      console.log('Response success:', response.success);
+      console.log('Response status:', response.status);
+      console.log('Response data:', response.data);
+      console.log('Response data status:', response.data?.status);
+      console.log('Response data code:', response.data?.code);
+      console.log('Type of response.data.code:', typeof response.data?.code);
+      console.log('=== END DEBUG ===');
+      
+      // Check for 404 first (user not found)
+      if (response.data && (response.data.code === 404 || response.data.code === "404" || response.status === 404)) {
+        console.log('404 detected - Patient not found, redirecting to register');
+        setErrorMessage('User not found. Redirecting to registration...');
+        setIsLoading(false);
+        
+        setTimeout(() => {
+          router.replace({
+            pathname: '/auth/register',
+            params: { mobile: mobileNumber }
+          });
+        }, 1500); // Show message for 1.5 seconds before redirect
+        return;
+      } 
+      // Check for successful OTP response
+      else if (response.success && response.data.status) {
+        console.log('OTP Response:', response.data);
+        console.log('Navigating to OTP screen with mobile:', mobileNumber);
+        
+        // Clear loading state first
+        setIsLoading(false);
+        
+        // Small delay to ensure state update, then navigate
+        setTimeout(() => {
+          router.replace({
+            pathname: '/auth/otp',
+            params: { 
+              mobile: mobileNumber,
+              type: 'login',
+              testOtp: response.data.data.otp // Pass OTP for auto-fill
+            }
+          });
+        }, 100);
+        return; // Exit early to avoid setting loading to false again
+      } 
+      // Handle other errors
+      else {
+        const apiErrorMessage = response.data?.message || 'Failed to send OTP. Please try again.';
+        console.log('Other error:', apiErrorMessage);
+        setErrorMessage(apiErrorMessage);
+      }
+    } catch (error) {
+      console.log('Network error:', error);
+      setErrorMessage('Network error. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -206,14 +286,21 @@ export default function LoginScreen() {
                     Please enter a valid 10-digit mobile number
                   </Text>
                 )}
+                {errorMessage && (
+                  <Text style={styles.errorText}>
+                    {errorMessage}
+                  </Text>
+                )}
               </View>
 
               <Pressable
                 style={({ pressed }) => [
                   styles.loginButton,
-                  pressed && styles.loginButtonPressed
+                  pressed && styles.loginButtonPressed,
+                  isLoading && styles.loginButtonDisabled
                 ]}
                 onPress={handleLogin}
+                disabled={isLoading}
                 android_ripple={{ 
                   color: '#ffffff40',
                   borderless: false
@@ -225,7 +312,11 @@ export default function LoginScreen() {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
-                  <Text style={styles.loginButtonText}>Send OTP</Text>
+                  {isLoading ? (
+                    <ActivityIndicator color="#ffffff" size="small" />
+                  ) : (
+                    <Text style={styles.loginButtonText}>Send OTP</Text>
+                  )}
                 </LinearGradient>
               </Pressable>
 
@@ -405,6 +496,9 @@ const styles = StyleSheet.create({
   loginButtonPressed: {
     transform: [{ scale: 0.98 }],
     elevation: 2,
+  },
+  loginButtonDisabled: {
+    opacity: 0.7,
   },
   buttonGradient: {
     paddingVertical: 18,

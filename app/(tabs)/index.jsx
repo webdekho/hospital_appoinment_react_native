@@ -132,7 +132,10 @@ export default function HomeScreen() {
                   </View>
                 </View>
                 <View style={styles.doctorActions}>
-                  <Pressable style={styles.bookButton}>
+                  <Pressable 
+                    style={styles.bookButton}
+                    onPress={() => router.push('/main/bookAppointment')}
+                  >
                     <Text style={styles.bookButtonText}>Book Appointment</Text>
                   </Pressable>
                 </View>
