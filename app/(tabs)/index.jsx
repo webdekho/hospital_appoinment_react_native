@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   Image,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -13,9 +14,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import CommonHeader from '../../components/CommonHeader';
+import ApiService from '../../services/api';
+import { getDoctorImageUrl } from '../../utils/imageUtils';
 
 
 export default function HomeScreen() {
+  const [doctors, setDoctors] = useState([]);
+  const [specializations, setSpecializations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [specializationsLoading, setSpecializationsLoading] = useState(true);
+  const [imageErrors, setImageErrors] = useState({});
+  const [error, setError] = useState(null);
+
   const specialties = [
     { name: 'Neurology', icon: '🧠', color: '#FFB6C1' },
     { name: 'Cardiology', icon: '❤️', color: '#FF6B6B' },
@@ -27,26 +37,178 @@ export default function HomeScreen() {
     { name: 'Psychiatry', icon: '🧘', color: '#87CEEB' },
   ];
 
-  const doctors = [
-    {
-      id: 1,
-      name: 'Chloe Kelly',
-      specialty: 'M.Ch (Neuro)',
-      rating: 4.5,
-      reviews: 2530,
-      fees: '$50.99',
-      image: require('../../assets/images/heart.png.png'), // Using available image as placeholder
-    },
-    {
-      id: 2,
-      name: 'Lauren Hemp',
-      specialty: 'Spinal Surgery',
-      rating: 4.5,
-      reviews: 2530,
-      fees: '$50.99',
-      image: require('../../assets/images/kidney.png'), // Using available image as placeholder
-    },
-  ];
+  useEffect(() => {
+    fetchDoctors();
+    fetchSpecializations();
+  }, []);
+
+  const fetchDoctors = async () => {
+    try {
+      setLoading(true);
+      
+      // Check if user is authenticated
+      const isAuthenticated = await ApiService.isAuthenticated();
+      
+      if (!isAuthenticated) {
+        // If not authenticated, use static data
+        setDoctors([
+          {
+            id: 1,
+            full_name: 'Dr. Chloe Kelly',
+            specialization: 'M.Ch (Neuro)',
+            experience_years: 5,
+            consultation_fee: 50.99,
+            image_url: null,
+          },
+          {
+            id: 2,
+            full_name: 'Dr. Lauren Hemp',
+            specialization: 'Spinal Surgery',
+            experience_years: 8,
+            consultation_fee: 50.99,
+            image_url: null,
+          },
+          {
+            id: 3,
+            full_name: 'Dr. Eion Morgan',
+            specialization: 'MBBS, MD (Neurology)',
+            experience_years: 15,
+            consultation_fee: 75.99,
+            image_url: null,
+          },
+        ]);
+        setError(null);
+        return;
+      }
+      
+      const response = await ApiService.getDoctors(3); // Get first 3 doctors
+      
+      if (response.success && response.data.status) {
+        setDoctors(response.data.data || []);
+        setError(null);
+      } else {
+        if (response.status === 401) {
+          // Token expired or invalid, use static data
+          setDoctors([
+            {
+              id: 1,
+              full_name: 'Dr. Chloe Kelly',
+              specialization: 'M.Ch (Neuro)',
+              experience_years: 5,
+              consultation_fee: 50.99,
+              image_url: null,
+            },
+            {
+              id: 2,
+              full_name: 'Dr. Lauren Hemp',
+              specialization: 'Spinal Surgery',
+              experience_years: 8,
+              consultation_fee: 50.99,
+              image_url: null,
+            },
+            {
+              id: 3,
+              full_name: 'Dr. Eion Morgan',
+              specialization: 'MBBS, MD (Neurology)',
+              experience_years: 15,
+              consultation_fee: 75.99,
+              image_url: null,
+            },
+          ]);
+          setError(null);
+        } else {
+          setError(response.data.message || 'Failed to fetch doctors');
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching doctors:', error);
+      setError(null); // Don't show error, just use fallback data
+      // Fallback to static data
+      setDoctors([
+        {
+          id: 1,
+          full_name: 'Dr. Chloe Kelly',
+          specialization: 'M.Ch (Neuro)',
+          experience_years: 5,
+          consultation_fee: 50.99,
+          image_url: null,
+        },
+        {
+          id: 2,
+          full_name: 'Dr. Lauren Hemp',
+          specialization: 'Spinal Surgery',
+          experience_years: 8,
+          consultation_fee: 50.99,
+          image_url: null,
+        },
+        {
+          id: 3,
+          full_name: 'Dr. Eion Morgan',
+          specialization: 'MBBS, MD (Neurology)',
+          experience_years: 15,
+          consultation_fee: 75.99,
+          image_url: null,
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchSpecializations = async () => {
+    try {
+      setSpecializationsLoading(true);
+      
+      // Check if user is authenticated
+      const isAuthenticated = await ApiService.isAuthenticated();
+      
+      if (!isAuthenticated) {
+        // If not authenticated, use static data
+        setSpecializations(specialties);
+        return;
+      }
+      
+      const response = await ApiService.getSpecializations(8); // Get first 8 specializations
+      
+      if (response.success && response.data.status) {
+        // Map API data to expected format
+        const mappedSpecializations = response.data.data?.map((spec, index) => {
+          // Build photo URL from API response
+          let photoUrl = null;
+          if (spec.photo) {
+            // Replace {base_url} placeholder with actual base URL from ApiService
+            // photoUrl = spec.photo.replace('{base_url}', ApiService.getBaseUrl());
+
+            photoUrl = ApiService.getBaseUrl() +"/"+ spec.photo;
+          }
+          
+          return {
+            id: spec.specialization_id || spec.id,
+            name: spec.name || spec.specialization_name || spec.title,
+            photo: photoUrl,
+            icon: specialties[index % specialties.length]?.icon || '🏥', // Use fallback icons
+            color: specialties[index % specialties.length]?.color || '#FFB6C1'
+          };
+        }) || [];
+        setSpecializations(mappedSpecializations);
+      } else {
+        if (response.status === 401) {
+          // Token expired or invalid, use static data
+          // Using static specializations due to 401 error
+          setSpecializations(specialties);
+        } else {
+          // API error, using static specializations
+          setSpecializations(specialties); // Fallback to static data
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching specializations:', error);
+      // Fallback to static data
+      setSpecializations(specialties);
+    } finally {
+      setSpecializationsLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -93,10 +255,34 @@ export default function HomeScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.specialtiesScrollContainer}
           >
-            {specialties.map((specialty, index) => (
-              <Pressable key={index} style={styles.specialtyCard}>
+            {(specializationsLoading ? specialties : specializations).map((specialty, index) => (
+              <Pressable 
+                key={specialty.id || index} 
+                style={styles.specialtyCard}
+                onPress={() => {
+                  router.push({
+                    pathname: '/(tabs)/doctors',
+                    params: { 
+                      specialtyId: specialty.id,
+                      specialtyName: specialty.name 
+                    }
+                  });
+                }}
+              >
                 <View style={styles.specialtyIcon}>
-                  <Text style={styles.specialtyEmoji}>{specialty.icon}</Text>
+                  {specialty.photo && !imageErrors[specialty.id] ? (
+                    <Image 
+                      source={{ uri: specialty.photo }}
+                      style={styles.specialtyImage}
+                      onError={() => {
+                        if (!imageErrors[specialty.id]) {
+                          setImageErrors(prev => ({ ...prev, [specialty.id]: true }));
+                        }
+                      }}
+                    />
+                  ) : (
+                    <Text style={styles.specialtyEmoji}>{specialty.icon}</Text>
+                  )}
                 </View>
                 <Text style={styles.specialtyName}>{specialty.name}</Text>
               </Pressable>
@@ -105,7 +291,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Popular Doctors section */}
-        <View style={styles.section}>
+        <View style={[styles.section, { marginTop: -10 }]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Popular Doctors</Text>
             <Pressable>
@@ -113,35 +299,94 @@ export default function HomeScreen() {
             </Pressable>
           </View>
 
-          <View style={styles.doctorsContainer}>
-            {doctors.map((doctor) => (
-              <View key={doctor.id} style={styles.doctorCard}>
-                <View style={styles.doctorInfo}>
-                  <Image
-                    source={doctor.image}
-                    style={styles.doctorAvatar}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.doctorDetails}>
-                    <Text style={styles.doctorName}>{doctor.name}</Text>
-                    <Text style={styles.doctorSpecialty}>{doctor.specialty}</Text>
-                    <View style={styles.ratingContainer}>
-                      <Text style={styles.starIcon}>⭐</Text>
-                      <Text style={styles.ratingText}>{doctor.rating} ({doctor.reviews})</Text>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#005666" />
+              <Text style={styles.loadingText}>Loading doctors...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+              <Pressable style={styles.retryButton} onPress={fetchDoctors}>
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.doctorsContainer}>
+              {doctors.map((doctor, index) => {
+                const derivedId = doctor.id || doctor.doctor_id;
+                const rawPhoto = doctor.photo || doctor.image_url || doctor.image || doctor.profile_image;
+                let constructedUrl = null;
+                if (rawPhoto && rawPhoto.trim() !== "") {
+                  const clean = rawPhoto.replace(/^\/+/, '');
+                  constructedUrl = clean.startsWith('http') ? clean : `${ApiService.getBaseUrl()}/${clean}`;
+                }
+                console.log(`Doctor ${derivedId} photo check:`, {
+                  rawPhoto,
+                  imageError: imageErrors[derivedId],
+                  constructedUrl,
+                });
+                
+                return (
+                <View key={derivedId} style={styles.doctorCard}>
+                  <View style={styles.doctorInfo}>
+                    <View style={styles.doctorAvatarContainer}>
+                      {constructedUrl && !imageErrors[derivedId] ? (
+                        <Image
+                          source={{ uri: constructedUrl }}
+                          style={styles.doctorAvatar}
+                          onError={() => {
+                            if (!imageErrors[derivedId]) {
+                              setImageErrors(prev => ({ ...prev, [derivedId]: true }));
+                            }
+                          }}
+                        />
+                      ) : (
+                        <MaterialIcons name="person" size={32} color="#666666" />
+                      )}
+                    </View>
+                    <View style={styles.doctorDetails}>
+                      <Text style={styles.doctorName} numberOfLines={1} ellipsizeMode="tail">
+                        {doctor.full_name || 
+                         doctor.name || 
+                         `${doctor.first_name || ''} ${doctor.last_name || ''}`.trim() ||
+                         'Doctor Name'}
+                      </Text>
+                      <Text style={styles.doctorSpecialty}>
+                        {doctor.specialization_name || doctor.specialization || doctor.specialty}
+                      </Text>
+                      {doctor.qualification && (
+                        <Text style={styles.doctorQualification}>{doctor.qualification}</Text>
+                      )}
+                      {doctor.experience_years && (
+                        <Text style={styles.doctorExperience}>
+                          {doctor.experience_years} years experience
+                        </Text>
+                      )}
                     </View>
                   </View>
+                  <View style={styles.doctorActions}>
+                    <Pressable 
+                      style={styles.bookButton}
+                      onPress={() => {
+                        const doctorId = doctor.id || doctor.doctor_id || (index + 1);
+                        
+                        if (doctorId) {
+                          const navUrl = `/main/bookAppointment?doctorId=${doctorId}`;
+                          router.push(navUrl);
+                        } else {
+                          router.push('/main/bookAppointment');
+                        }
+                      }}
+                    >
+                      <Text style={styles.bookButtonText}>Appointment</Text>
+                    </Pressable>
+                  </View>
                 </View>
-                <View style={styles.doctorActions}>
-                  <Pressable 
-                    style={styles.bookButton}
-                    onPress={() => router.push('/main/bookAppointment')}
-                  >
-                    <Text style={styles.bookButtonText}>Book Appointment</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-          </View>
+              );
+              })}
+            </View>
+          )}
         </View>
 
         {/* Who We Are section */}
@@ -328,11 +573,27 @@ const styles = StyleSheet.create({
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
+    overflow: 'hidden',
     shadowOpacity: 0.1,
     shadowRadius: 3,
   },
   specialtyEmoji: {
     fontSize: 28,
+  },
+  specialtyImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+    resizeMode: 'cover',
+  },
+  iconOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   specialtyName: {
     fontSize: 12,
@@ -348,38 +609,79 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
+    marginBottom: 4,
   },
   doctorInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
-  doctorAvatar: {
+  doctorAvatarContainer: {
     width: 60,
     height: 60,
     borderRadius: 30,
     marginRight: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    overflow: 'hidden',
+  },
+  doctorAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+    resizeMode: 'cover',
+  },
+  doctorIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
   },
   doctorDetails: {
     flex: 1,
+    justifyContent: 'center',
+    minWidth: 0,
   },
   doctorName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#1a1a1a',
     marginBottom: 4,
+    flexShrink: 1,
   },
   doctorSpecialty: {
     fontSize: 14,
     color: '#666666',
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  doctorQualification: {
+    fontSize: 12,
+    color: '#005666',
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  doctorExperience: {
+    fontSize: 11,
+    color: '#888888',
+    fontStyle: 'italic',
   },
   ratingContainer: {
     flexDirection: 'row',
@@ -400,8 +702,9 @@ const styles = StyleSheet.create({
   bookButton: {
     backgroundColor: '#005666',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    alignItems: 'center',
   },
   bookButtonText: {
     fontSize: 12,
@@ -497,5 +800,40 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666666',
     lineHeight: 20,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#666666',
+  },
+  errorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    backgroundColor: '#FFF5F5',
+    borderRadius: 12,
+    marginHorizontal: 10,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#E53E3E',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: '#005666',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });

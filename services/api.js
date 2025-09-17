@@ -8,6 +8,10 @@ class ApiService {
     this.baseURL = BASE_URL;
   }
 
+  getBaseUrl() {
+    return CONFIG.BASE_URL; // Return the base URL for file uploads/images
+  }
+
   async makeRequest(endpoint, method = 'GET', data = null, includeAuth = false) {
     const url = `${this.baseURL}${endpoint}`;
     
@@ -134,6 +138,70 @@ class ApiService {
   async isAuthenticated() {
     const token = await this.getToken();
     return !!token;
+  }
+
+  async getDoctors(limit = null, page = 1, specialtyId = null) {
+    let endpoint = '/doctors';
+    const params = [];
+    
+    if (limit) params.push(`limit=${limit}`);
+    if (page) params.push(`page=${page}`);
+    if (specialtyId) params.push(`specialization_id=${specialtyId}`);
+    
+    if (params.length > 0) {
+      endpoint += '?' + params.join('&');
+    }
+    
+    console.log('getDoctors API endpoint:', endpoint);
+    return await this.makeRequest(endpoint, 'GET', null, true);
+  }
+
+  async getDoctorById(doctorId) {
+    return await this.makeRequest(`/doctors/${doctorId}`, 'GET', null, true);
+  }
+
+  async getDoctorAvailability(doctorId, date) {
+    return await this.makeRequest(`/doctors/${doctorId}/availability?date=${date}`, 'GET', null, true);
+  }
+
+  async getDoctorSlotsByDate(doctorId, date) {
+    const params = `doctor_id=${doctorId}&date=${date}`;
+    return await this.makeRequest(`/doctor_slots?${params}`, 'GET', null, true);
+  }
+
+  async bookAppointment(doctorId, appointmentData) {
+    return await this.makeRequest(`/doctors/${doctorId}/appointments`, 'POST', appointmentData, true);
+  }
+
+  async createAvailabilitySlots(payload) {
+    // payload should include: doctor_id, day_of_week, shift_type, start_time, end_time, slot_duration, slots[]
+    return await this.makeRequest('/user/availabilityslots', 'POST', payload, true);
+  }
+
+  async getSpecializations(limit = null) {
+    const endpoint = limit ? `/specializations?limit=${limit}` : '/specializations';
+    return await this.makeRequest(endpoint, 'GET', null, true);
+  }
+
+  // Services API methods
+  async getServices(limit = null, page = 1, search = null) {
+    let endpoint = '/services';
+    const params = [];
+    
+    if (limit) params.push(`limit=${limit}`);
+    if (page) params.push(`page=${page}`);
+    if (search) params.push(`search=${encodeURIComponent(search)}`);
+    
+    if (params.length > 0) {
+      endpoint += '?' + params.join('&');
+    }
+    
+    console.log('getServices API endpoint:', endpoint);
+    return await this.makeRequest(endpoint, 'GET', null, true);
+  }
+
+  async getServiceById(serviceId) {
+    return await this.makeRequest(`/services/${serviceId}`, 'GET', null, true);
   }
 }
 

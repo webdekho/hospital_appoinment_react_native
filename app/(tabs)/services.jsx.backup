@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, ActivityIndicator, Pressable, Modal, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, ActivityIndicator, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { MaterialIcons } from '@expo/vector-icons';
 import CommonHeader from '../../components/CommonHeader';
 import ApiService from '../../services/api';
-
-const { width, height } = Dimensions.get('window');
 
 export default function ServicesScreen() {
   const [services, setServices] = useState([]);
@@ -22,8 +20,6 @@ export default function ServicesScreen() {
     has_prev_page: false
   });
   const [loadingMore, setLoadingMore] = useState(false);
-  const [selectedService, setSelectedService] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
     fetchServices();
@@ -55,20 +51,13 @@ export default function ServicesScreen() {
         return;
       }
 
-      const response = await ApiService.getServices(8, page, searchQuery); // 8 items per page
+      const response = await ApiService.getServices(20, page, searchQuery);
       
-      console.log('=== DEBUGGING SERVICES API ===');
-      console.log('Full response:', JSON.stringify(response, null, 2));
-      console.log('response.success:', response.success);
-      console.log('response.data.status:', response.data.status);
-      console.log('response.data.data:', response.data.data);
-      console.log('response.data.data.pagination:', response.data.data.pagination);
-      
-      // Fix: Check response.data.status (API response status is inside data)
       if (response.success && response.data.status) {
-        console.log('✅ Condition passed - processing services');
-        const newServices = response.data.data.data || [];
-        console.log('newServices:', newServices);
+        console.log('Services API response:', response.data);
+        console.log('Services data:', response.data.data);
+        console.log('Pagination data:', response.data.pagination);
+        const newServices = response.data.data || [];
         
         if (append && page > 1) {
           setServices(prevServices => [...prevServices, ...newServices]);
@@ -76,20 +65,16 @@ export default function ServicesScreen() {
           setServices(newServices);
         }
         
-        const paginationData = response.data.data.pagination || {
+        setPagination(response.data.pagination || {
           current_page: 1,
           total_pages: 1,
           total_items: newServices.length,
           items_per_page: 20,
           has_next_page: false,
           has_prev_page: false
-        };
-        console.log('Setting pagination:', paginationData);
-        setPagination(paginationData);
+        });
       } else {
-        console.log('❌ Condition failed - using fallback data');
-        console.log('response.success:', response.success);
-        console.log('response.data.status:', response.data.status);
+        console.log('Services API failed, using fallback data');
         const fallbackServices = getFallbackServices();
         setServices(fallbackServices);
         setPagination({
@@ -211,7 +196,7 @@ export default function ServicesScreen() {
     const defaultImage = getDefaultImage(index);
     
     return (
-      <Pressable key={service.service_id || service.id} style={styles.serviceCard} onPress={() => handleServicePress(service)}>
+      <Pressable key={service.id} style={styles.serviceCard}>
         <View style={styles.imageContainer}>
           {imageUri ? (
             <Image
@@ -232,7 +217,10 @@ export default function ServicesScreen() {
         </View>
         <View style={styles.serviceContent}>
           <Text style={styles.serviceTitle}>{service.title || service.service_name}</Text>
-          {service.duration && parseInt(service.duration) > 0 && (
+          {service.cost && (
+            <Text style={styles.serviceCost}>₹{service.cost}</Text>
+          )}
+          {service.duration && (
             <Text style={styles.serviceDuration}>{service.duration} mins</Text>
           )}
         </View>
@@ -255,33 +243,13 @@ export default function ServicesScreen() {
   };
 
   const handleLoadMore = () => {
-    console.log('=== LOAD MORE DEBUG ===');
-    console.log('pagination:', pagination);
-    console.log('pagination.has_next_page:', pagination.has_next_page);
-    console.log('loadingMore:', loadingMore);
-    console.log('Current page:', pagination.current_page);
-    console.log('Total pages:', pagination.total_pages);
-    
     if (pagination.has_next_page && !loadingMore) {
-      console.log('✅ Loading more services...');
       fetchServices(pagination.current_page + 1, true);
-    } else {
-      console.log('❌ Cannot load more - has_next_page:', pagination.has_next_page, 'loadingMore:', loadingMore);
     }
   };
 
   const handleSearch = () => {
     fetchServices(1, false);
-  };
-
-  const handleServicePress = (service) => {
-    setSelectedService(service);
-    setModalVisible(true);
-  };
-
-  const closeModal = () => {
-    setModalVisible(false);
-    setSelectedService(null);
   };
 
   return (
@@ -330,7 +298,6 @@ export default function ServicesScreen() {
               </View>
               
               {/* Load More Button */}
-              {console.log('Rendering load more button - has_next_page:', pagination.has_next_page)}
               {pagination.has_next_page && (
                 <View style={styles.loadMoreContainer}>
                   {loadingMore ? (
@@ -355,89 +322,6 @@ export default function ServicesScreen() {
           )}
         </View>
       </ScrollView>
-
-      {/* Service Details Modal */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={closeModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            {selectedService && (
-              <>
-                {/* Modal Header */}
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Service Details</Text>
-                  <Pressable onPress={closeModal} style={styles.closeButton}>
-                    <MaterialIcons name="close" size={24} color="#666" />
-                  </Pressable>
-                </View>
-
-                {/* Modal Content */}
-                <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-                  {/* Service Image */}
-                  <View style={styles.modalImageContainer}>
-                    {getServiceImageUri(selectedService) ? (
-                      <Image
-                        source={{ uri: getServiceImageUri(selectedService) }}
-                        style={styles.modalServiceImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={styles.modalImagePlaceholder}>
-                        <MaterialIcons name="medical-services" size={48} color="#CCCCCC" />
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Service Information */}
-                  <View style={styles.modalInfoContainer}>
-                    <Text style={styles.modalServiceTitle}>
-                      {selectedService.title || selectedService.service_name}
-                    </Text>
-                    
-                    {selectedService.description && (
-                      <View style={styles.modalSection}>
-                        <Text style={styles.modalSectionTitle}>Description</Text>
-                        <Text style={styles.modalDescription}>{selectedService.description}</Text>
-                      </View>
-                    )}
-
-                    {selectedService.duration && parseInt(selectedService.duration) > 0 && (
-                      <View style={styles.modalSection}>
-                        <Text style={styles.modalSectionTitle}>Duration</Text>
-                        <Text style={styles.modalDetailText}>{selectedService.duration} minutes</Text>
-                      </View>
-                    )}
-
-                    {selectedService.cost && parseFloat(selectedService.cost) > 0 && (
-                      <View style={styles.modalSection}>
-                        <Text style={styles.modalSectionTitle}>Cost</Text>
-                        <Text style={styles.modalCostText}>₹{selectedService.cost}</Text>
-                      </View>
-                    )}
-
-                    <View style={styles.modalSection}>
-                      <Text style={styles.modalSectionTitle}>Service ID</Text>
-                      <Text style={styles.modalDetailText}>#{selectedService.service_id}</Text>
-                    </View>
-                  </View>
-                </ScrollView>
-
-                {/* Modal Footer */}
-                <View style={styles.modalFooter}>
-                  <Pressable style={styles.bookServiceButton} onPress={closeModal}>
-                    <MaterialIcons name="check" size={20} color="#FFFFFF" />
-                    <Text style={styles.bookServiceButtonText}>Got it</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -529,6 +413,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 4,
   },
+  serviceCost: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#005666',
+    marginBottom: 2,
+  },
   serviceDuration: {
     fontSize: 12,
     color: '#666666',
@@ -613,115 +503,6 @@ const styles = StyleSheet.create({
   loadingMoreText: {
     fontSize: 14,
     color: '#666666',
-    marginLeft: 8,
-  },
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    width: width * 0.9,
-    maxHeight: height * 0.8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    overflow: 'hidden',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
-    backgroundColor: '#F8F9FA',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1a1a1a',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  modalContent: {
-    flex: 1,
-  },
-  modalImageContainer: {
-    height: 200,
-    backgroundColor: '#F0F0F0',
-  },
-  modalServiceImage: {
-    width: '100%',
-    height: '100%',
-  },
-  modalImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F0F0F0',
-  },
-  modalInfoContainer: {
-    padding: 20,
-  },
-  modalServiceTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1a1a1a',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  modalSection: {
-    marginBottom: 20,
-  },
-  modalSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#005666',
-    marginBottom: 8,
-  },
-  modalDescription: {
-    fontSize: 14,
-    color: '#666666',
-    lineHeight: 20,
-  },
-  modalDetailText: {
-    fontSize: 14,
-    color: '#1a1a1a',
-    fontWeight: '500',
-  },
-  modalCostText: {
-    fontSize: 18,
-    color: '#005666',
-    fontWeight: '700',
-  },
-  modalFooter: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
-    backgroundColor: '#F8F9FA',
-  },
-  bookServiceButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#005666',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  bookServiceButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
     marginLeft: 8,
   },
 });
